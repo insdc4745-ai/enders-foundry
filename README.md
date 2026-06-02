@@ -3,7 +3,7 @@
 > 디지털 트윈 해군 워게임 AI 시뮬레이션 — 실제 해역/함대 데이터를 디지털 트윈으로 복제하고,
 > 그 위에서 블루/레드 AI가 전술 의사결정을 실험·단련하는 **비공식 연구·교육용 합성 시뮬레이션**.
 
-[![play](https://img.shields.io/badge/▶_Play-GitHub_Pages-3b9dff)](https://USERNAME.github.io/enders-foundry/)
+[![play](https://img.shields.io/badge/▶_Play-GitHub_Pages-3b9dff)](https://insdc4745-ai.github.io/enders-foundry/)
 
 브라우저에서 바로 구동되는 **인터랙티브 해군 워게임**입니다. 플레이어가 블루 함대를 직접 지휘하고,
 레드는 규칙기반 AI가 해협 통과를 시도합니다. 시뮬레이션 엔진은 결정적 시드 RNG로 동일 조건에서 동일 전개를 재현합니다.
