@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>⚓ Ender's Foundry — 디지털 트윈 해군 워게임 (인터랙티브)</title>
+<style>
+  :root{--blue:#3b9dff;--red:#ff5a5a;--bg:#0a0e16;--panel:#121826;--line:#1f2a3d;--txt:#cfe0f5;--mut:#7c8aa5;--gold:#f5b942;}
+  *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overflow:hidden;}
+  header{padding:9px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  header h1{font-size:15px;margin:0;letter-spacing:.5px;}
+  header .tag{font-size:11px;color:var(--mut);border:1px solid var(--line);padding:2px 8px;border-radius:10px;}
+  .wrap{display:grid;grid-template-columns:1fr 330px;height:calc(100vh - 45px - 50px);}
+  .stage{position:relative;background:radial-gradient(circle at 35% 30%,#0e1726,#070a11);}
+  canvas{display:block;width:100%;height:100%;cursor:crosshair;}
+  .hint{position:absolute;left:12px;top:10px;font-size:12px;color:var(--mut);background:#0009;padding:6px 10px;border-radius:6px;border:1px solid var(--line);max-width:380px;line-height:1.5;pointer-events:none;}
+  .banner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#04070cd0;flex-direction:column;gap:14px;z-index:5;}
+  .banner h2{font-size:40px;margin:0;letter-spacing:2px;}
+  .banner button{font-size:15px;padding:9px 22px;}
+  .panel{border-left:1px solid var(--line);background:var(--panel);overflow-y:auto;padding:12px;}
+  .card{border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:10px;}
+  .card h2{font-size:11px;margin:0 0 7px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;}
+  .kv{display:flex;justify-content:space-between;font-size:13px;padding:1px 0;}
+  .blue{color:var(--blue);} .red{color:var(--red);} .gold{color:var(--gold);} .mut{color:var(--mut);}
+  .unit-row{font-size:12px;padding:4px 0;border-bottom:1px dashed #1a2333;cursor:pointer;}
+  .unit-row:hover{background:#18202e;}
+  .unit-row.sel{outline:1px solid var(--gold);border-radius:4px;}
+  .bar{height:6px;border-radius:3px;background:#22304a;overflow:hidden;margin-top:3px;}
+  .bar>i{display:block;height:100%;}
+  .log{font-size:11.5px;line-height:1.45;height:170px;overflow-y:auto;}
+  .log div{padding:1px 0;border-bottom:1px dashed #14202f;}
+  .controls{display:flex;align-items:center;gap:9px;padding:7px 14px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap;height:50px;}
+  button,select{background:#1b2638;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;}
+  button:hover{background:#26344c;}
+  button.on{background:#1e3a5f;border-color:var(--blue);color:#cfe6ff;}
+  button.primary{background:#1e3a5f;border-color:var(--blue);}
+  input[type=range]{width:120px;vertical-align:middle;}
+  label.ctl{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px;}
+  .sep{width:1px;height:24px;background:var(--line);}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚓ Ender's Foundry</h1>
+  <span class="tag">디지털 트윈 해군 워게임</span>
+  <span class="tag">인터랙티브 · 비공식 연구·교육용 합성</span>
+  <span class="tag" id="scnTag"></span>
+  <span class="tag" id="stepTag" style="font-variant-numeric:tabular-nums;"></span>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <canvas id="cv"></canvas>
+    <div class="hint">
+      🟦 <b>블루 함정 클릭</b> = 선택 · <b>바다 클릭</b> = 선택 함정 침로 지정<br/>
+      🟥 <b>적 접촉 클릭</b> = 사격 목표 지정 · 우클릭 = 명령 취소<br/>
+      레드는 규칙기반 AI. 자동사격 ON이면 사거리 내 자동 교전.
+    </div>
+    <div class="banner" id="banner">
+      <h2 id="bannerTxt"></h2>
+      <div class="mut" id="bannerSub"></div>
+      <button class="primary" onclick="restart()">⟲ 다시 시작</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card"><h2>선택 함정 / 명령</h2><div id="selInfo" class="mut" style="font-size:13px">함정을 클릭해 선택하세요.</div></div>
+    <div class="card"><h2>전력 (잔존 HP)</h2><div id="forces"></div></div>
+    <div class="card"><h2>전황 메트릭</h2><div id="metrics"></div></div>
+    <div class="card"><h2>교전 이벤트 로그</h2><div class="log" id="log"></div></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="play" class="primary" onclick="togglePlay()">▶ 재생</button>
+  <button onclick="stepOnce()">⏭ 1스텝</button>
+  <button onclick="restart()">⟲ 처음</button>
+  <span class="sep"></span>
+  <label class="ctl">시뮬속도 <input type="range" id="spd" min="1" max="20" value="6"/><span id="spdLbl">6×</span></label>
+  <span class="sep"></span>
+  <label class="ctl">시나리오
+    <select id="scnSel" onchange="restart()">
+      <option value="strait_intercept_01">난이도 1 · 코르벳 2척</option>
+      <option value="strait_intercept_02">난이도 2 · 코르벳 3척(고속)</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <button id="blueMode" onclick="toggleBlueMode()">블루: 👤 수동 지휘</button>
+  <button id="autoFire" class="on" onclick="toggleAutoFire()">자동사격: ON</button>
+</div>
+
+<script type="module">
+import { NavalEnv, RuleBasedPolicy, bearingRange } from './game/engine.js';
+import { SCENARIOS } from './game/scenarios.js';
+
+/* ---------- 상태 ---------- */
+let env = new NavalEnv();
+let scnKey = 'strait_intercept_01';
+let scenario, bounds, redPolicy, bluePolicy;
+let orders = {};            // blue id -> {heading,speed,fireTarget}
+let selected = null;        // blue id
+let blueMode = 'manual';    // 'manual' | 'ai'
+let autoFire = true;
+let playing = false;
+let acc = 0, last = 0;
+let stats = { shots: 0, hits: 0 };
+let lastFireFx = [];        // {x1,y1,x2,y2,hit,age}
+
+const $ = (id) => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+
+/* ---------- 좌표 변환 ---------- */
+function computeBounds(scn) {
+  let la = [], lo = [];
+  for (const s of [...scn.blue, ...scn.red]) { la.push(s.lat); lo.push(s.lon); }
+  const pad = 0.18;
+  return { minLat: Math.min(...la) - pad, maxLat: Math.max(...la) + pad,
+           minLon: Math.min(...lo) - pad, maxLon: Math.max(...lo) + pad };
+}
+const X = (lon) => ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * cv.width;
+const Y = (lat) => (1 - (lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * cv.height;
+const invLon = (px) => bounds.minLon + (px / cv.width) * (bounds.maxLon - bounds.minLon);
+const invLat = (py) => bounds.minLat + (1 - py / cv.height) * (bounds.maxLat - bounds.minLat);
+const nmToPxY = (nm) => (nm / 60) / (bounds.maxLat - bounds.minLat) * cv.height;
+
+/* ---------- 초기화 ---------- */
+function restart() {
+  scnKey = $('scnSel').value;
+  scenario = SCENARIOS[scnKey];
+  bounds = computeBounds(scenario);
+  env.reset(scenario.seed, scenario);
+  redPolicy = new RuleBasedPolicy('transit', scenario.transit_heading);
+  bluePolicy = new RuleBasedPolicy('intercept', scenario.transit_heading);
+  orders = {}; selected = null; stats = { shots: 0, hits: 0 }; lastFireFx = [];
+  playing = false; updatePlayBtn();
+  $('banner').style.display = 'none';
+  $('scnTag').textContent = scenario.name;
+  $('log').innerHTML = '';
+  resize();
+  render(); updatePanels();
+}
+window.restart = restart;
+
+/* ---------- 명령 빌드 + 틱 ---------- */
+function buildActions() {
+  const obs = env.observations();
+  const actions = {};
+  for (const e of Object.values(env.entities)) {
+    if (e.hp <= 0) continue;
+    const o = obs[e.id];
+    if (e.side === 'red') { actions[e.id] = redPolicy.act(o); continue; }
+    if (blueMode === 'ai') { actions[e.id] = bluePolicy.act(o); continue; }
+    const ord = orders[e.id] || {};
+    let fire = ord.fireTarget ?? null;
+    const tgtAlive = fire != null && Object.values(env.entities).some((x) => x.mmsi === fire && x.hp > 0);
+    if (!tgtAlive) fire = null;
+    if (fire == null && autoFire) {
+      const en = o.contacts.filter((c) => c.side !== e.side && c.range_nm <= o.self.weapon_nm);
+      if (en.length) fire = en.reduce((a, b) => (a.range_nm <= b.range_nm ? a : b)).mmsi;
+    }
+    actions[e.id] = { heading_cmd: ord.heading ?? null, speed_cmd: ord.speed ?? null, fire_target: fire };
+  }
+  return actions;
+}
+
+function tick() {
+  if (env.isDone()) { finish(); return; }
+  const actions = buildActions();
+  env.step(actions);
+  for (const ev of env.events) {
+    if (ev.type === 'fire') {
+      stats.shots++;
+      const s = Object.values(env.entities).find((x) => x.mmsi === ev.src);
+      const d = Object.values(env.entities).find((x) => x.mmsi === ev.dst);
+      if (s && d) lastFireFx.push({ x1: X(s.lon), y1: Y(s.lat), x2: X(d.lon), y2: Y(d.lat), hit: ev.hit, age: 0 });
+      logLine(ev);
+    } else if (ev.type === 'hit') { stats.hits++; logLine(ev); }
+    else if (ev.type === 'kill') logLine(ev);
+  }
+  if (env.isDone()) finish();
+}
+
+function finish() {
+  playing = false; updatePlayBtn();
+  let res = env.result();
+  if (res === null) res = 'draw'; // 시간초과
+  const map = { blue: ['BLUE 승리', 'var(--blue)'], red: ['RED 승리', 'var(--red)'], draw: ['무승부 / 시간초과', 'var(--mut)'] };
+  $('bannerTxt').textContent = map[res][0];
+  $('bannerTxt').style.color = map[res][1];
+  const bA = Object.values(env.entities).filter((e) => e.side === 'blue' && e.hp > 0).length;
+  const rA = Object.values(env.entities).filter((e) => e.side === 'red' && e.hp > 0).length;
+  const hr = stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0;
+  $('bannerSub').textContent = `${env.step_count}스텝 · 블루 잔존 ${bA} · 레드 잔존 ${rA} · 사격 ${stats.shots} 명중 ${stats.hits} (${hr}%)`;
+  $('banner').style.display = 'flex';
+}
+
+/* ---------- 로그 ---------- */
+function nm(mmsi) { const e = Object.values(env.entities).find((x) => x.mmsi === mmsi); return e ? e.name : mmsi; }
+function logLine(ev) {
+  const box = $('log');
+  let html = '';
+  const s = Object.values(env.entities).find((x) => x.mmsi === ev.src);
+  const cls = s && s.side === 'blue' ? 'blue' : 'red';
+  if (ev.type === 'fire') html = `<span class="mut">t${env.step_count}</span> <span class="${cls}">${nm(ev.src)}</span> → ${nm(ev.dst)} 사격 <span class="mut">${ev.range_nm}nm p${ev.p_hit} ${ev.hit ? '<span class="gold">HIT</span>' : 'miss'}</span>`;
+  else if (ev.type === 'hit') html = `<span class="mut">t${env.step_count}</span> 💥 ${nm(ev.dst)} 피해 -${ev.dmg}`;
+  else if (ev.type === 'kill') html = `<span class="mut">t${env.step_count}</span> ☠ <b class="${cls}">${nm(ev.dst)} 격침</b>`;
+  const d = document.createElement('div'); d.innerHTML = html;
+  box.prepend(d);
+  while (box.children.length > 120) box.removeChild(box.lastChild);
+}
+
+/* ---------- 렌더 ---------- */
+function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
+window.addEventListener('resize', () => { resize(); render(); });
+
+function drawGrid() {
+  ctx.fillStyle = '#070a11'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = '#13202f'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    const x = cv.width * i / 8; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height); ctx.stroke();
+    const y = cv.height * i / 8; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cv.width, y); ctx.stroke();
+  }
+  ctx.fillStyle = '#2a3a52'; ctx.font = '10px monospace';
+  ctx.fillText(bounds.minLat.toFixed(2) + 'N ' + bounds.minLon.toFixed(2) + 'E', 6, cv.height - 6);
+  ctx.fillText(bounds.maxLat.toFixed(2) + 'N ' + bounds.maxLon.toFixed(2) + 'E', cv.width - 130, 14);
+}
+
+function drawUnit(e) {
+  const x = X(e.lon), y = Y(e.lat), col = e.side === 'blue' ? '#3b9dff' : '#ff5a5a';
+  // trail
+  if (e.trail.length > 1) {
+    ctx.beginPath(); ctx.moveTo(X(e.trail[0][1]), Y(e.trail[0][0]));
+    for (const [la, lo] of e.trail) ctx.lineTo(X(lo), Y(la));
+    ctx.strokeStyle = col + '33'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  // sensor ring
+  ctx.beginPath(); ctx.arc(x, y, nmToPxY(e.sensor_nm), 0, 7); ctx.strokeStyle = col + '20'; ctx.lineWidth = 1; ctx.stroke();
+  // weapon ring
+  ctx.beginPath(); ctx.arc(x, y, nmToPxY(e.weapon_nm), 0, 7); ctx.strokeStyle = col + '44'; ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
+  // selection halo
+  if (e.id === selected) { ctx.beginPath(); ctx.arc(x, y, 16, 0, 7); ctx.strokeStyle = '#f5b942'; ctx.lineWidth = 2; ctx.stroke(); }
+  // hull (triangle by heading)
+  const rad = (e.heading * Math.PI) / 180;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rad);
+  ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(0, 4); ctx.lineTo(-6, 7); ctx.closePath();
+  ctx.fillStyle = col; ctx.fill(); ctx.restore();
+  // hp bar
+  const w = 26, hp = e.hp / e.maxHp;
+  ctx.fillStyle = '#22304a'; ctx.fillRect(x - w / 2, y + 12, w, 4);
+  ctx.fillStyle = hp > 0.5 ? '#46d17a' : hp > 0.25 ? '#f5b942' : '#ff5a5a'; ctx.fillRect(x - w / 2, y + 12, w * hp, 4);
+  // label
+  ctx.fillStyle = col; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(e.name, x, y - 14); ctx.textAlign = 'left';
+}
+
+function drawFx() {
+  for (const f of lastFireFx) {
+    const a = 1 - f.age / 12;
+    ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2);
+    ctx.strokeStyle = (f.hit ? '#f5b942' : '#5a6b85') + Math.floor(a * 200).toString(16).padStart(2, '0');
+    ctx.lineWidth = f.hit ? 2 : 1; ctx.stroke();
+    if (f.hit) { ctx.beginPath(); ctx.arc(f.x2, f.y2, (1 - a) * 14, 0, 7); ctx.strokeStyle = '#f5b942' + Math.floor(a * 200).toString(16).padStart(2, '0'); ctx.stroke(); }
+    f.age++;
+  }
+  lastFireFx = lastFireFx.filter((f) => f.age < 12);
+}
+
+function render() {
+  drawGrid();
+  // fire-target order lines
+  for (const e of Object.values(env.entities)) {
+    if (e.side !== 'blue' || e.hp <= 0) continue;
+    const ord = orders[e.id];
+    if (ord && ord.fireTarget != null) {
+      const t = Object.values(env.entities).find((x) => x.mmsi === ord.fireTarget && x.hp > 0);
+      if (t) { ctx.beginPath(); ctx.moveTo(X(e.lon), Y(e.lat)); ctx.lineTo(X(t.lon), Y(t.lat)); ctx.strokeStyle = '#f5b94255'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); }
+    }
+  }
+  drawFx();
+  for (const e of Object.values(env.entities)) if (e.hp > 0) drawUnit(e);
+  $('stepTag').textContent = 't=' + env.step_count + '/' + env.max_steps;
+}
+
+/* ---------- 패널 ---------- */
+function updatePanels() {
+  // forces
+  const f = $('forces'); f.innerHTML = '';
+  for (const side of ['blue', 'red']) {
+    for (const e of Object.values(env.entities).filter((x) => x.side === side)) {
+      const hp = Math.max(0, e.hp) / e.maxHp;
+      const dead = e.hp <= 0;
+      const div = document.createElement('div'); div.className = 'unit-row' + (e.id === selected ? ' sel' : '');
+      div.innerHTML = `<div class="kv"><span class="${side}">${dead ? '☠ ' : ''}${e.name}</span><span class="mut">${Math.max(0, Math.round(e.hp))} / ${e.maxHp}</span></div>
+        <div class="bar"><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#46d17a' : hp > 0.25 ? '#f5b942' : '#ff5a5a'}"></i></div>`;
+      if (side === 'blue' && !dead) div.onclick = () => selectUnit(e.id);
+      f.appendChild(div);
+    }
+  }
+  // metrics
+  const hr = stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0;
+  const bHp = Object.values(env.entities).filter((e) => e.side === 'blue').reduce((s, e) => s + Math.max(0, e.hp), 0);
+  const rHp = Object.values(env.entities).filter((e) => e.side === 'red').reduce((s, e) => s + Math.max(0, e.hp), 0);
+  $('metrics').innerHTML =
+    `<div class="kv"><span>스텝</span><b>${env.step_count} / ${env.max_steps}</b></div>
+     <div class="kv"><span>총 사격 / 명중</span><b>${stats.shots} / ${stats.hits} (${hr}%)</b></div>
+     <div class="kv"><span class="blue">블루 총 HP</span><b class="blue">${Math.round(bHp)}</b></div>
+     <div class="kv"><span class="red">레드 총 HP</span><b class="red">${Math.round(rHp)}</b></div>
+     <div class="kv"><span>난이도 / ROE</span><b>Lv${scenario.difficulty} · ${scenario.roe}</b></div>`;
+  // selected
+  const sel = selected ? env.entities[selected] : null;
+  if (sel && sel.hp > 0) {
+    const ord = orders[selected] || {};
+    const tgt = ord.fireTarget != null ? nm(ord.fireTarget) : '—';
+    $('selInfo').innerHTML =
+      `<div class="kv"><span class="blue"><b>${sel.name}</b></span><span class="mut">${sel.etype}</span></div>
+       <div class="kv"><span>침로 / 속력</span><b>${Math.round(sel.heading)}° · ${sel.speed.toFixed(0)}kn</b></div>
+       <div class="kv"><span>HP / 재장전</span><b>${Math.round(sel.hp)} · ${sel.reload}</b></div>
+       <div class="kv"><span>센서 / 무장</span><b>${sel.sensor_nm} / ${sel.weapon_nm}nm</b></div>
+       <div class="kv"><span>명령 침로</span><b class="gold">${ord.heading != null ? Math.round(ord.heading) + '°' : '자유'}</b></div>
+       <div class="kv"><span>사격 목표</span><b class="gold">${tgt}</b></div>`;
+  } else {
+    $('selInfo').innerHTML = '<span class="mut">블루 함정을 클릭해 선택하세요.</span>';
+  }
+}
+
+/* ---------- 상호작용 ---------- */
+function selectUnit(id) { selected = id; render(); updatePanels(); }
+window.selectUnit = selectUnit;
+
+cv.addEventListener('contextmenu', (ev) => {
+  ev.preventDefault();
+  if (selected && orders[selected]) { delete orders[selected]; updatePanels(); render(); }
+});
+
+cv.addEventListener('click', (ev) => {
+  const r = cv.getBoundingClientRect();
+  const px = ev.clientX - r.left, py = ev.clientY - r.top;
+  // 1) 함정 클릭 판정 (가까운 유닛)
+  let hitUnit = null, best = 18;
+  for (const e of Object.values(env.entities)) {
+    if (e.hp <= 0) continue;
+    const d = Math.hypot(X(e.lon) - px, Y(e.lat) - py);
+    if (d < best) { best = d; hitUnit = e; }
+  }
+  if (hitUnit) {
+    if (hitUnit.side === 'blue') { selectUnit(hitUnit.id); return; }
+    // 적 클릭 → 선택 블루의 사격 목표
+    if (selected && env.entities[selected] && env.entities[selected].hp > 0) {
+      orders[selected] = { ...(orders[selected] || {}), fireTarget: hitUnit.mmsi };
+      updatePanels(); render();
+    }
+    return;
+  }
+  // 2) 바다 클릭 → 선택 블루 침로 지정
+  if (selected && env.entities[selected] && env.entities[selected].hp > 0) {
+    const me = env.entities[selected];
+    const { bearing } = bearingRange(me, { lat: invLat(py), lon: invLon(px) });
+    orders[selected] = { ...(orders[selected] || {}), heading: bearing, speed: me.max_speed };
+    updatePanels(); render();
+  }
+});
+
+/* ---------- 컨트롤 ---------- */
+function updatePlayBtn() { $('play').textContent = playing ? '⏸ 일시정지' : '▶ 재생'; }
+function togglePlay() { if (env.isDone()) return; playing = !playing; updatePlayBtn(); }
+function stepOnce() { if (env.isDone()) return; playing = false; updatePlayBtn(); tick(); render(); updatePanels(); }
+function toggleBlueMode() {
+  blueMode = blueMode === 'manual' ? 'ai' : 'manual';
+  $('blueMode').textContent = blueMode === 'manual' ? '블루: 👤 수동 지휘' : '블루: 🤖 AI 위임';
+  $('blueMode').classList.toggle('on', blueMode === 'ai');
+}
+function toggleAutoFire() { autoFire = !autoFire; $('autoFire').textContent = '자동사격: ' + (autoFire ? 'ON' : 'OFF'); $('autoFire').classList.toggle('on', autoFire); }
+window.togglePlay = togglePlay; window.stepOnce = stepOnce;
+window.toggleBlueMode = toggleBlueMode; window.toggleAutoFire = toggleAutoFire;
+$('spd').addEventListener('input', (e) => { $('spdLbl').textContent = e.target.value + '×'; });
+
+/* ---------- 메인 루프 ---------- */
+function loop(ts) {
+  if (!last) last = ts;
+  const dt = ts - last; last = ts;
+  if (playing) {
+    const stepsPerSec = Number($('spd').value) * 2; // 1~20 → 2~40 sim-steps/sec
+    acc += (dt / 1000) * stepsPerSec;
+    let guard = 0;
+    while (acc >= 1 && playing && guard < 50) { tick(); acc -= 1; guard++; }
+    render(); updatePanels();
+  } else {
+    drawFx(); // 잔여 이펙트 감쇠
+  }
+  requestAnimationFrame(loop);
+}
+
+restart();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
